@@ -1,4 +1,4 @@
-Some dickbag decided to hack the webhook, this project has now been revamped and the new version WILL NOT be open source. I will keep the old code on here but the most I will do with the new keylogger is upload the compiled version.
+Some dickbag decided to hack the webhook, this project has now been revamped and the new version WILL NOT be open source. I will keep the old code on here but the most I will do with the new keylogger is upload the compiled version but I do not know when that will happen, it might only happen if I feel like it.
 
 # ~~📢 Important Information~~
 
