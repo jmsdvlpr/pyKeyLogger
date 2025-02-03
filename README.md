@@ -1,3 +1,5 @@
+Some dickbag decided to hack the webhook, this project has now been revamped and the new version WILL NOT be open source. I will keep the old code on here but the most I will do with the new keylogger is upload the compiled version.
+
 # ~~📢 Important Information~~
 
 ## ~~🔑 Zip File Password~~
@@ -7,7 +9,7 @@
 ~~If you wish to edit the source code and compile it, use the following command:~~
 
 ```sh
-~~pyinstaller --onefile --noconsole fpsCounter.py~~
+pyinstaller --onefile --noconsole fpsCounter.py
 ```
 
 ### ~~🚀 Included Python Compiler~~
